@@ -1,0 +1,11 @@
+[
+  {
+    "type": "rule",
+    "category": "Мероприятия",
+    "tag": "ВЗХ",
+    "title": "1.1",
+    "name": "Нападение",
+    "text": "Текст правила...",
+    "punish": "Demorgan 60 min"
+  }
+]
