@@ -3,7 +3,8 @@ name: Discord Notification
 on:
   push:
     paths:
-      - 'rules.json'  # Уведомление придет только если изменились правила
+      - 'rules.json'  # Срабатывает автоматически при обновлении файла
+  workflow_dispatch:  # Позволяет запускать вручную через вкладку Actions
 
 jobs:
   notify:
@@ -12,7 +13,6 @@ jobs:
       - name: Send Webhook
         run: |
           # Формируем JSON для Discord
-          # Мы используем 'embeds' чтобы сообщение выглядело как красивая карточка
           curl -H "Content-Type: application/json" \
                -X POST \
                -d '{
