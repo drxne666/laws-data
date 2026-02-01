@@ -10,11 +10,11 @@ const client = new Client({
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
-const DATA_FILE = './rules.json';
-// ID канала, куда упадет отчет о работе (замени на свой или добавь в секреты GitHub)
-const LOG_CHANNEL_ID = "1467189434863583287"; 
+const LOG_CHANNEL_ID = "ТВОЙ_ID_КАНАЛА_ЛОГОВ"; // Укажи ID канала для отчетов
 
+// Общая карта каналов (Правила + Законы)
 const CHANNEL_MAP = {
+    // Правила
     "Основные правила проекта": "1467200553149796403",
     "Правила игровых зон": "1467200617947599031",
     "Правила ограблений и похищений": "1467200633638490417",
@@ -33,47 +33,68 @@ const CHANNEL_MAP = {
     "Правила государственных организаций": "1467200870973178023",
     "Правила криминальных организаций": "1467200893496856912",
     "Правила войны за территорию": "1467200912689860771",
-    "Правила войны за материалы": "1467200928271827077"
+    "Правила войны за материалы": "1467200928271827077",
+    
+    // Законы
+    "Уголовный": "1467466642861719767",
+    "Административный": "1467466684393853077",
+    "Дорожный": "1467466715511394470",
+    "Процессуальный": "1467466760511815897"
+};
+
+const lawPrefixes = {
+    "Уголовный": "УК",
+    "Административный": "АК",
+    "Дорожный": "ДК",
+    "Процессуальный": "ПК"
 };
 
 client.once('ready', async () => {
     console.log(`✅ Бот запущен: ${client.user.tag}`);
-    
-    // Сбор статистики для лога
-    const stats = { updated: 0, created: 0, deleted: 0, errors: 0 };
+    const stats = { updated: 0, created: 0, deleted: 0 };
     const startTime = Date.now();
 
     try {
-        const rulesData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        // Загружаем данные из обоих файлов
+        const rulesData = JSON.parse(fs.readFileSync('./rules.json', 'utf8'));
+        const lawsData = JSON.parse(fs.readFileSync('./db.json', 'utf8'));
+        
+        // Объединяем в один массив для обработки
+        const allData = [...rulesData, ...lawsData];
         const sections = {};
 
-        rulesData.forEach(rule => {
-            const tag = rule.tag?.trim();
+        allData.forEach(item => {
+            const tag = item.category || item.tag; // Для законов используем category
             if (CHANNEL_MAP[tag]) {
                 if (!sections[tag]) sections[tag] = [];
-                sections[tag].push(rule);
+                sections[tag].push(item);
             }
         });
 
-        for (const [tagName, rules] of Object.entries(sections)) {
+        for (const [tagName, items] of Object.entries(sections)) {
             const channelId = CHANNEL_MAP[tagName];
             const channel = await client.channels.fetch(channelId);
+            const isLaw = !!lawPrefixes[tagName];
             
+            console.log(`📡 Синхронизация: ${tagName}`);
+
             let chunks = [];
             let currentChunk = "";
 
-            rules.forEach(r => {
-                let ruleText = `**${r.title} ${r.name || ''}**\n${r.text}\n`;
-                if (r.exception) ruleText += `> **Исключение:** ${r.exception}\n`;
-                if (r.note) ruleText += `> **Примечание:** ${r.note}\n`;
-                if (r.punish) ruleText += `**Наказание:** ${r.punish}\n`;
-                ruleText += '\n---\n';
+            items.forEach(item => {
+                const prefix = isLaw ? lawPrefixes[tagName] : "";
+                let itemText = `**${prefix} ${item.title} ${item.name || ''}**\n${item.text}\n`;
+                
+                if (item.exception) itemText += `> **Исключение:** ${item.exception}\n`;
+                if (item.note) itemText += `> **Примечание:** ${item.note}\n`;
+                if (item.punish) itemText += `**Наказание:** ${item.punish}\n`;
+                itemText += '\n---\n';
 
-                if ((currentChunk + ruleText).length > 3900) {
+                if ((currentChunk + itemText).length > 3900) {
                     chunks.push(currentChunk);
-                    currentChunk = ruleText;
+                    currentChunk = itemText;
                 } else {
-                    currentChunk += ruleText;
+                    currentChunk += itemText;
                 }
             });
             chunks.push(currentChunk);
@@ -84,9 +105,9 @@ client.once('ready', async () => {
             for (let i = 0; i < chunks.length; i++) {
                 const footerId = `Sync ID: ${tagName} | Part: ${i + 1}`;
                 const embed = new EmbedBuilder()
-                    .setTitle(`📌 ${tagName}`)
+                    .setTitle(isLaw ? `⚖️ ${tagName} Кодекс` : `📌 ${tagName}`)
                     .setDescription(chunks[i])
-                    .setColor('#e0015b')
+                    .setColor(isLaw ? '#2f3136' : '#e0015b')
                     .setFooter({ text: footerId });
 
                 const existingMsg = botMessages.find(m => m.embeds[0]?.footer?.text === footerId);
@@ -100,9 +121,10 @@ client.once('ready', async () => {
                     await channel.send({ embeds: [embed] });
                     stats.created++;
                 }
-                await new Promise(r => setTimeout(r, 800)); // Ускорил чуть-чуть
+                await new Promise(r => setTimeout(r, 800));
             }
 
+            // Удаление старых частей
             const currentPartIds = chunks.map((_, i) => `Sync ID: ${tagName} | Part: ${i + 1}`);
             const extraMessages = botMessages.filter(m => 
                 m.embeds[0]?.footer?.text?.startsWith(`Sync ID: ${tagName}`) && 
@@ -115,33 +137,25 @@ client.once('ready', async () => {
             }
         }
 
-        // --- ОТПРАВКА ЛОГА В DISCORD ---
         const duration = ((Date.now() - startTime) / 1000).toFixed(1);
         const logChannel = await client.channels.fetch(LOG_CHANNEL_ID);
-        
         const logEmbed = new EmbedBuilder()
-            .setTitle('🔄 Отчет о синхронизации')
-            .setColor(stats.errors > 0 ? '#ff0000' : '#00ff00')
+            .setTitle('🔄 Глобальная синхронизация завершена')
+            .setDescription('Обновлены правила и кодексы.')
             .addFields(
-                { name: '✨ Создано частей', value: `${stats.created}`, inline: true },
-                { name: '✅ Обновлено частей', value: `${stats.updated}`, inline: true },
-                { name: '🗑️ Удалено лишних', value: `${stats.deleted}`, inline: true },
-                { name: '⏱️ Время выполнения', value: `${duration} сек.`, inline: false }
+                { name: '✨ Новые части', value: `${stats.created}`, inline: true },
+                { name: '✅ Обновлено', value: `${stats.updated}`, inline: true },
+                { name: '🗑️ Удалено', value: `${stats.deleted}`, inline: true }
             )
-            .setTimestamp();
+            .setFooter({ text: `Время: ${duration}с` })
+            .setTimestamp()
+            .setColor('#00ff00');
 
         await logChannel.send({ embeds: [logEmbed] });
-
-        console.log('🚀 Синхронизация завершена!');
         process.exit();
 
     } catch (error) {
         console.error('❌ Ошибка:', error);
-        // Попытка отправить ошибку в логи
-        try {
-            const logChannel = await client.channels.fetch(LOG_CHANNEL_ID);
-            await logChannel.send({ content: `❌ **Ошибка синхронизации!**\n\`\`\`${error.message}\`\`\`` });
-        } catch (e) {}
         process.exit(1);
     }
 });
