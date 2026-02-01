@@ -4,31 +4,45 @@ const fs = require('fs');
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 const TOKEN = process.env.DISCORD_TOKEN;
-const CHANNEL_ID = "1467477989863329962"; 
+const CHANNEL_ID = "ТВОЙ_ID_КАНАЛА_НОВОСТЕЙ"; 
 
 client.once('ready', async () => {
     try {
         const data = JSON.parse(fs.readFileSync('./changelog.json', 'utf8'));
         const channel = await client.channels.fetch(CHANNEL_ID);
 
-        // Формируем список изменений с красивыми буллитами
-        const changesList = data.changes.map(item => `${item}`).join('\n');
-
         const embed = new EmbedBuilder()
-            .setTitle(`🚀 Новая версия: v${data.version}`)
-            .setAuthor({ name: 'Las Vegas Helper | Development' })
-            .setDescription(`### Что изменилось в этой версии:\n${changesList}`)
-            .setColor('#7289DA') // Красивый Blurple цвет Discord
-            .addFields(
-                { name: 'Тип обновления', value: `\`${data.type || "Стандартное"}\``, inline: true },
-                { name: 'Статус', value: '🟢 Доступно', inline: true }
-            )
-            .setThumbnail('https://i.imgur.com/v8S7A3P.png') // Сюда можно поставить лого твоего хелпера
-            .setFooter({ text: "Обновите приложение для корректной работы всех функций" })
+            .setTitle(`🚀 Доступно обновление: v${data.version}`)
+            .setColor('#5865F2')
+            .setThumbnail('https://i.imgur.com/v8S7A3P.png') // Твое лого
             .setTimestamp();
 
-        await channel.send({ content: "@everyone", embeds: [embed] }); // Пингует всех при обнове
-        console.log('✅ Новости опубликованы!');
+        let description = "";
+
+        // Если есть новые функции
+        if (data.new && data.new.length > 0) {
+            description += `### 🆕 Что нового:\n${data.new.map(i => `> ${i}`).join('\n')}\n\n`;
+        }
+
+        // Если есть изменения в текущем функционале
+        if (data.changed && data.changed.length > 0) {
+            description += `### 🔄 Изменено:\n${data.changed.map(i => `> ${i}`).join('\n')}\n\n`;
+        }
+
+        // Если есть исправления багов
+        if (data.fixed && data.fixed.length > 0) {
+            description += `### 🛠️ Исправления:\n${data.fixed.map(i => `> ${i}`).join('\n')}\n`;
+        }
+
+        embed.setDescription(description || "Технические улучшения и оптимизация.");
+        embed.setFooter({ text: "Las Vegas Helper • Версия " + data.version });
+
+        await channel.send({ 
+            content: "🔔 **Вышла новая версия хелпера!** @everyone", 
+            embeds: [embed] 
+        });
+
+        console.log(`✅ Обновление ${data.version} опубликовано.`);
         process.exit();
     } catch (error) {
         console.error('❌ Ошибка:', error);
