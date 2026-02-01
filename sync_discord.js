@@ -10,9 +10,13 @@ const client = new Client({
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
-const LOG_CHANNEL_ID = "ТВОЙ_ID_КАНАЛА_ЛОГОВ"; // Укажи ID канала для отчетов
 
-// Общая карта каналов (Правила + Законы)
+// ID каналов для логов
+const LOGS = {
+    RULES: "1467189434863583287",
+    LAWS: "1467189401812471808"
+};
+
 const CHANNEL_MAP = {
     // Правила
     "Основные правила проекта": "1467200553149796403",
@@ -43,28 +47,30 @@ const CHANNEL_MAP = {
 };
 
 const lawPrefixes = {
-    "Уголовный": "УК",
-    "Административный": "АК",
-    "Дорожный": "ДК",
-    "Процессуальный": "ПК"
+    "Уголовный": "УК", "Административный": "АК", "Дорожный": "ДК", "Процессуальный": "ПК"
 };
 
 client.once('ready', async () => {
     console.log(`✅ Бот запущен: ${client.user.tag}`);
-    const stats = { updated: 0, created: 0, deleted: 0 };
-    const startTime = Date.now();
+    
+    // Отдельные счетчики для правил и законов
+    const report = {
+        rules: { updated: [], created: [], deleted: 0, count: 0 },
+        laws: { updated: [], created: [], deleted: 0, count: 0 }
+    };
 
     try {
-        // Загружаем данные из обоих файлов
         const rulesData = JSON.parse(fs.readFileSync('./rules.json', 'utf8'));
         const lawsData = JSON.parse(fs.readFileSync('./db.json', 'utf8'));
         
-        // Объединяем в один массив для обработки
-        const allData = [...rulesData, ...lawsData];
-        const sections = {};
+        const allData = [
+            ...rulesData.map(i => ({...i, isLaw: false})), 
+            ...lawsData.map(i => ({...i, isLaw: true}))
+        ];
 
+        const sections = {};
         allData.forEach(item => {
-            const tag = item.category || item.tag; // Для законов используем category
+            const tag = item.isLaw ? item.category : item.tag;
             if (CHANNEL_MAP[tag]) {
                 if (!sections[tag]) sections[tag] = [];
                 sections[tag].push(item);
@@ -74,19 +80,16 @@ client.once('ready', async () => {
         for (const [tagName, items] of Object.entries(sections)) {
             const channelId = CHANNEL_MAP[tagName];
             const channel = await client.channels.fetch(channelId);
-            const isLaw = !!lawPrefixes[tagName];
+            const isLaw = items[0].isLaw;
+            const currentReport = isLaw ? report.laws : report.rules;
             
-            console.log(`📡 Синхронизация: ${tagName}`);
-
             let chunks = [];
             let currentChunk = "";
 
             items.forEach(item => {
-                const prefix = isLaw ? lawPrefixes[tagName] : "";
+                const prefix = isLaw ? (lawPrefixes[tagName] || "") : "";
                 let itemText = `**${prefix} ${item.title} ${item.name || ''}**\n${item.text}\n`;
-                
                 if (item.exception) itemText += `> **Исключение:** ${item.exception}\n`;
-                if (item.note) itemText += `> **Примечание:** ${item.note}\n`;
                 if (item.punish) itemText += `**Наказание:** ${item.punish}\n`;
                 itemText += '\n---\n';
 
@@ -115,16 +118,15 @@ client.once('ready', async () => {
                 if (existingMsg) {
                     if (existingMsg.embeds[0].description !== chunks[i]) {
                         await existingMsg.edit({ embeds: [embed] });
-                        stats.updated++;
+                        if (!currentReport.updated.includes(tagName)) currentReport.updated.push(tagName);
                     }
                 } else {
                     await channel.send({ embeds: [embed] });
-                    stats.created++;
+                    if (!currentReport.created.includes(tagName)) currentReport.created.push(tagName);
                 }
                 await new Promise(r => setTimeout(r, 800));
             }
 
-            // Удаление старых частей
             const currentPartIds = chunks.map((_, i) => `Sync ID: ${tagName} | Part: ${i + 1}`);
             const extraMessages = botMessages.filter(m => 
                 m.embeds[0]?.footer?.text?.startsWith(`Sync ID: ${tagName}`) && 
@@ -133,27 +135,32 @@ client.once('ready', async () => {
 
             for (const extra of extraMessages) {
                 await extra.delete();
-                stats.deleted++;
+                currentReport.deleted++;
             }
         }
 
-        const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-        const logChannel = await client.channels.fetch(LOG_CHANNEL_ID);
-        const logEmbed = new EmbedBuilder()
-            .setTitle('🔄 Глобальная синхронизация завершена')
-            .setDescription('Обновлены правила и кодексы.')
-            .addFields(
-                { name: '✨ Новые части', value: `${stats.created}`, inline: true },
-                { name: '✅ Обновлено', value: `${stats.updated}`, inline: true },
-                { name: '🗑️ Удалено', value: `${stats.deleted}`, inline: true }
-            )
-            .setFooter({ text: `Время: ${duration}с` })
-            .setTimestamp()
-            .setColor('#00ff00');
+        // --- ФУНКЦИЯ ОТПРАВКИ ОТЧЕТА ---
+        const sendReport = async (logChannelId, data, title) => {
+            if (data.updated.length === 0 && data.created.length === 0 && data.deleted === 0) return;
 
-        await logChannel.send({ embeds: [logEmbed] });
+            const channel = await client.channels.fetch(logChannelId);
+            const embed = new EmbedBuilder()
+                .setTitle(`📊 Отчет: ${title}`)
+                .setColor(title.includes('Законы') ? '#5865F2' : '#E91E63')
+                .addFields(
+                    { name: '✅ Обновлено в разделах:', value: data.updated.join(', ') || 'Нет', inline: false },
+                    { name: '✨ Создано новых разделов:', value: data.created.join(', ') || 'Нет', inline: false },
+                    { name: '🗑️ Удалено старых частей:', value: `${data.deleted}`, inline: true }
+                )
+                .setTimestamp();
+            await channel.send({ embeds: [embed] });
+        };
+
+        await sendReport(LOGS.RULES, report.rules, "Правила");
+        await sendReport(LOGS.LAWS, report.laws, "Законы");
+
+        console.log('🚀 Синхронизация завершена!');
         process.exit();
-
     } catch (error) {
         console.error('❌ Ошибка:', error);
         process.exit(1);
