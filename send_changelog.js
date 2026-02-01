@@ -4,7 +4,7 @@ const fs = require('fs');
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 const TOKEN = process.env.DISCORD_TOKEN;
-const CHANNEL_ID = "ТВОЙ_ID_КАНАЛА_НОВОСТЕЙ"; 
+const CHANNEL_ID = "1467477989863329962"; 
 
 client.once('ready', async () => {
     try {
