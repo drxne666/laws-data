@@ -38,7 +38,7 @@ client.once('ready', async () => {
         embed.setFooter({ text: `Las Vegas Helper • Версия ${data.version} • Сегодня` });
 
         await channel.send({ 
-            content: "🔔 **Вышла новая версия хелпера!** @everyone", 
+            content: "🔔 **Вышла новая версия!** @everyone", 
             embeds: [embed] 
         });
 
