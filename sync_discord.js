@@ -1,17 +1,18 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 
-// Исправлены интенты
 const client = new Client({ 
     intents: [
         GatewayIntentBits.Guilds, 
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent // Важно для поиска старых эмбедов
+        GatewayIntentBits.MessageContent 
     ] 
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const DATA_FILE = './rules.json';
+// ID канала, куда упадет отчет о работе (замени на свой или добавь в секреты GitHub)
+const LOG_CHANNEL_ID = "1467189434863583287"; 
 
 const CHANNEL_MAP = {
     "Основные правила проекта": "1467200553149796403",
@@ -35,10 +36,13 @@ const CHANNEL_MAP = {
     "Правила войны за материалы": "1467200928271827077"
 };
 
-// Исправлено событие на 'ready'
 client.once('ready', async () => {
     console.log(`✅ Бот запущен: ${client.user.tag}`);
     
+    // Сбор статистики для лога
+    const stats = { updated: 0, created: 0, deleted: 0, errors: 0 };
+    const startTime = Date.now();
+
     try {
         const rulesData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
         const sections = {};
@@ -55,8 +59,6 @@ client.once('ready', async () => {
             const channelId = CHANNEL_MAP[tagName];
             const channel = await client.channels.fetch(channelId);
             
-            console.log(`📡 Обработка канала: ${tagName}`);
-
             let chunks = [];
             let currentChunk = "";
 
@@ -79,7 +81,6 @@ client.once('ready', async () => {
             const messages = await channel.messages.fetch({ limit: 50 });
             const botMessages = Array.from(messages.filter(m => m.author.id === client.user.id).values()).reverse();
 
-            // Обновляем или создаем части
             for (let i = 0; i < chunks.length; i++) {
                 const footerId = `Sync ID: ${tagName} | Part: ${i + 1}`;
                 const embed = new EmbedBuilder()
@@ -91,21 +92,17 @@ client.once('ready', async () => {
                 const existingMsg = botMessages.find(m => m.embeds[0]?.footer?.text === footerId);
 
                 if (existingMsg) {
-                    // Редактируем, только если контент реально изменился
                     if (existingMsg.embeds[0].description !== chunks[i]) {
                         await existingMsg.edit({ embeds: [embed] });
-                        console.log(`  ✅ Обновлено: ${footerId}`);
-                    } else {
-                        console.log(`  💤 Без изменений: ${footerId}`);
+                        stats.updated++;
                     }
                 } else {
                     await channel.send({ embeds: [embed] });
-                    console.log(`  ✨ Создано: ${footerId}`);
+                    stats.created++;
                 }
-                await new Promise(r => setTimeout(r, 1000));
+                await new Promise(r => setTimeout(r, 800)); // Ускорил чуть-чуть
             }
 
-            // --- НОВОЕ: Удаление лишних сообщений (если частей стало меньше) ---
             const currentPartIds = chunks.map((_, i) => `Sync ID: ${tagName} | Part: ${i + 1}`);
             const extraMessages = botMessages.filter(m => 
                 m.embeds[0]?.footer?.text?.startsWith(`Sync ID: ${tagName}`) && 
@@ -114,14 +111,37 @@ client.once('ready', async () => {
 
             for (const extra of extraMessages) {
                 await extra.delete();
-                console.log(`  🗑️ Удалена лишняя часть: ${extra.embeds[0].footer.text}`);
+                stats.deleted++;
             }
         }
 
-        console.log('🚀 Полная синхронизация завершена!');
+        // --- ОТПРАВКА ЛОГА В DISCORD ---
+        const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+        const logChannel = await client.channels.fetch(LOG_CHANNEL_ID);
+        
+        const logEmbed = new EmbedBuilder()
+            .setTitle('🔄 Отчет о синхронизации')
+            .setColor(stats.errors > 0 ? '#ff0000' : '#00ff00')
+            .addFields(
+                { name: '✨ Создано частей', value: `${stats.created}`, inline: true },
+                { name: '✅ Обновлено частей', value: `${stats.updated}`, inline: true },
+                { name: '🗑️ Удалено лишних', value: `${stats.deleted}`, inline: true },
+                { name: '⏱️ Время выполнения', value: `${duration} сек.`, inline: false }
+            )
+            .setTimestamp();
+
+        await logChannel.send({ embeds: [logEmbed] });
+
+        console.log('🚀 Синхронизация завершена!');
         process.exit();
+
     } catch (error) {
-        console.error('❌ Ошибка синхронизации:', error);
+        console.error('❌ Ошибка:', error);
+        // Попытка отправить ошибку в логи
+        try {
+            const logChannel = await client.channels.fetch(LOG_CHANNEL_ID);
+            await logChannel.send({ content: `❌ **Ошибка синхронизации!**\n\`\`\`${error.message}\`\`\`` });
+        } catch (e) {}
         process.exit(1);
     }
 });
