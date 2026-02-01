@@ -14,7 +14,7 @@ client.once('ready', async () => {
         const embed = new EmbedBuilder()
             .setTitle(`🚀 Доступно обновление: v${data.version}`)
             .setColor('#5865F2')
-            .setThumbnail('https://i.imgur.com/v8S7A3P.png') // Твое лого
+            .setThumbnail('https://ibb.co.com/jP3f0H37') // Твое лого
             .setTimestamp();
 
         let description = "";
