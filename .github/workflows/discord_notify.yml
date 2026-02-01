@@ -44,7 +44,7 @@ jobs:
                  "avatar_url": "https://i.imgur.com/83p738D.png", 
                  "embeds": [{
                    "title": "${{ steps.vars.outputs.type }}",
-                   "description": "В базу данных были внесены правки. Рекомендуется ознакомиться с обновлением в приложении.",
+                   "description": "В базу данных были внесены правки.",
                    "color": 15814746,
                    "fields": [
                      {
