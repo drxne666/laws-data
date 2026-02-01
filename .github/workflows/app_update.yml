@@ -1,0 +1,27 @@
+name: App Update Notification
+
+on:
+  push:
+    paths:
+      - 'changelog.json' # Срабатывает только при изменении этого файла
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install Discord.js
+        run: npm install discord.js
+
+      - name: Run Changelog Script
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+        run: node send_changelog.js
