@@ -1,12 +1,18 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
+// Исправлены интенты
+const client = new Client({ 
+    intents: [
+        GatewayIntentBits.Guilds, 
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent // Важно для поиска старых эмбедов
+    ] 
+});
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const DATA_FILE = './rules.json';
 
-// Карта каналов: Тег из JSON -> ID канала в Discord
 const CHANNEL_MAP = {
     "Основные правила проекта": "1467200553149796403",
     "Правила игровых зон": "1467200617947599031",
@@ -29,14 +35,14 @@ const CHANNEL_MAP = {
     "Правила войны за материалы": "1467200928271827077"
 };
 
-client.once('clientReady', async () => {
+// Исправлено событие на 'ready'
+client.once('ready', async () => {
     console.log(`✅ Бот запущен: ${client.user.tag}`);
     
     try {
         const rulesData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
         const sections = {};
 
-        // Сортируем правила по категориям
         rulesData.forEach(rule => {
             const tag = rule.tag?.trim();
             if (CHANNEL_MAP[tag]) {
@@ -73,6 +79,7 @@ client.once('clientReady', async () => {
             const messages = await channel.messages.fetch({ limit: 50 });
             const botMessages = Array.from(messages.filter(m => m.author.id === client.user.id).values()).reverse();
 
+            // Обновляем или создаем части
             for (let i = 0; i < chunks.length; i++) {
                 const footerId = `Sync ID: ${tagName} | Part: ${i + 1}`;
                 const embed = new EmbedBuilder()
@@ -84,13 +91,30 @@ client.once('clientReady', async () => {
                 const existingMsg = botMessages.find(m => m.embeds[0]?.footer?.text === footerId);
 
                 if (existingMsg) {
-                    await existingMsg.edit({ embeds: [embed] });
-                    console.log(`  ✅ Обновлено: ${footerId}`);
+                    // Редактируем, только если контент реально изменился
+                    if (existingMsg.embeds[0].description !== chunks[i]) {
+                        await existingMsg.edit({ embeds: [embed] });
+                        console.log(`  ✅ Обновлено: ${footerId}`);
+                    } else {
+                        console.log(`  💤 Без изменений: ${footerId}`);
+                    }
                 } else {
                     await channel.send({ embeds: [embed] });
                     console.log(`  ✨ Создано: ${footerId}`);
                 }
                 await new Promise(r => setTimeout(r, 1000));
+            }
+
+            // --- НОВОЕ: Удаление лишних сообщений (если частей стало меньше) ---
+            const currentPartIds = chunks.map((_, i) => `Sync ID: ${tagName} | Part: ${i + 1}`);
+            const extraMessages = botMessages.filter(m => 
+                m.embeds[0]?.footer?.text?.startsWith(`Sync ID: ${tagName}`) && 
+                !currentPartIds.includes(m.embeds[0]?.footer?.text)
+            );
+
+            for (const extra of extraMessages) {
+                await extra.delete();
+                console.log(`  🗑️ Удалена лишняя часть: ${extra.embeds[0].footer.text}`);
             }
         }
 
