@@ -11,14 +11,12 @@ const client = new Client({
 
 const TOKEN = process.env.DISCORD_TOKEN;
 
-// ID каналов для логов
 const LOGS = {
     RULES: "1467189434863583287",
     LAWS: "1467189401812471808"
 };
 
 const CHANNEL_MAP = {
-    // Правила
     "Основные правила проекта": "1467200553149796403",
     "Правила игровых зон": "1467200617947599031",
     "Правила ограблений и похищений": "1467200633638490417",
@@ -38,8 +36,6 @@ const CHANNEL_MAP = {
     "Правила криминальных организаций": "1467200893496856912",
     "Правила войны за территорию": "1467200912689860771",
     "Правила войны за материалы": "1467200928271827077",
-    
-    // Законы
     "Уголовный": "1467466642861719767",
     "Административный": "1467466684393853077",
     "Дорожный": "1467466715511394470",
@@ -50,13 +46,29 @@ const lawPrefixes = {
     "Уголовный": "УК", "Административный": "АК", "Дорожный": "ДК", "Процессуальный": "ПК"
 };
 
-client.once('ready', async () => {
+// Функция для безопасной нарезки текста
+function splitLongText(text, limit = 3900) {
+    const chunks = [];
+    let str = text;
+    while (str.length > 0) {
+        if (str.length <= limit) {
+            chunks.push(str);
+            break;
+        }
+        let splitAt = str.lastIndexOf('\n', limit);
+        if (splitAt === -1) splitAt = limit;
+        chunks.push(str.substring(0, splitAt));
+        str = str.substring(splitAt).trim();
+    }
+    return chunks;
+}
+
+client.once('clientReady', async () => { // Исправлено на clientReady
     console.log(`✅ Бот запущен: ${client.user.tag}`);
     
-    // Отдельные счетчики для правил и законов
     const report = {
-        rules: { updated: [], created: [], deleted: 0, count: 0 },
-        laws: { updated: [], created: [], deleted: 0, count: 0 }
+        rules: { updated: [], created: [], deleted: 0 },
+        laws: { updated: [], created: [], deleted: 0 }
     };
 
     try {
@@ -93,14 +105,27 @@ client.once('ready', async () => {
                 if (item.punish) itemText += `**Наказание:** ${item.punish}\n`;
                 itemText += '\n---\n';
 
-                if ((currentChunk + itemText).length > 3900) {
-                    chunks.push(currentChunk);
-                    currentChunk = itemText;
+                // Если ОДИН пункт уже больше лимита, режем его принудительно
+                if (itemText.length > 3900) {
+                    const subParts = splitLongText(itemText, 3900);
+                    subParts.forEach(part => {
+                        if ((currentChunk + part).length > 3900) {
+                            chunks.push(currentChunk);
+                            currentChunk = part;
+                        } else {
+                            currentChunk += part;
+                        }
+                    });
                 } else {
-                    currentChunk += itemText;
+                    if ((currentChunk + itemText).length > 3900) {
+                        chunks.push(currentChunk);
+                        currentChunk = itemText;
+                    } else {
+                        currentChunk += itemText;
+                    }
                 }
             });
-            chunks.push(currentChunk);
+            if (currentChunk) chunks.push(currentChunk);
 
             const messages = await channel.messages.fetch({ limit: 50 });
             const botMessages = Array.from(messages.filter(m => m.author.id === client.user.id).values()).reverse();
@@ -124,7 +149,7 @@ client.once('ready', async () => {
                     await channel.send({ embeds: [embed] });
                     if (!currentReport.created.includes(tagName)) currentReport.created.push(tagName);
                 }
-                await new Promise(r => setTimeout(r, 800));
+                await new Promise(r => setTimeout(r, 1000)); // Чуть увеличил задержку для надежности
             }
 
             const currentPartIds = chunks.map((_, i) => `Sync ID: ${tagName} | Part: ${i + 1}`);
@@ -139,18 +164,16 @@ client.once('ready', async () => {
             }
         }
 
-        // --- ФУНКЦИЯ ОТПРАВКИ ОТЧЕТА ---
         const sendReport = async (logChannelId, data, title) => {
             if (data.updated.length === 0 && data.created.length === 0 && data.deleted === 0) return;
-
             const channel = await client.channels.fetch(logChannelId);
             const embed = new EmbedBuilder()
                 .setTitle(`📊 Отчет: ${title}`)
                 .setColor(title.includes('Законы') ? '#5865F2' : '#E91E63')
                 .addFields(
-                    { name: '✅ Обновлено в разделах:', value: data.updated.join(', ') || 'Нет', inline: false },
-                    { name: '✨ Создано новых разделов:', value: data.created.join(', ') || 'Нет', inline: false },
-                    { name: '🗑️ Удалено старых частей:', value: `${data.deleted}`, inline: true }
+                    { name: '✅ Обновлено:', value: data.updated.join(', ') || 'Нет', inline: false },
+                    { name: '✨ Создано:', value: data.created.join(', ') || 'Нет', inline: false },
+                    { name: '🗑️ Удалено частей:', value: `${data.deleted}`, inline: true }
                 )
                 .setTimestamp();
             await channel.send({ embeds: [embed] });
